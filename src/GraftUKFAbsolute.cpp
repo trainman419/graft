@@ -31,6 +31,8 @@
  * Author: Chad Rockey
  */
 
+#include <Eigen/SVD>
+
  #include <graft/GraftUKFAbsolute.h>
  #include <ros/console.h>
 
@@ -165,6 +167,67 @@ MatrixXd transformVelocitites(const MatrixXd vel, const MatrixXd quaternion){
 	out(2) = transformed.getZ();
 
 	return out;
+}
+
+template<typename _Matrix_Type_>
+_Matrix_Type_ pseudoInverse(const _Matrix_Type_ &a,
+    double epsilon = std::numeric_limits<double>::epsilon())
+{
+  Eigen::JacobiSVD< _Matrix_Type_ > svd(a ,Eigen::ComputeThinU |
+      Eigen::ComputeThinV);
+  double tolerance = epsilon * std::max(a.cols(), a.rows())
+    *svd.singularValues().array().abs()(0);
+  return svd.matrixV() *  (svd.singularValues().array().abs() >
+      tolerance).select(svd.singularValues().array().inverse(),
+        0).matrix().asDiagonal() * svd.matrixU().adjoint();
+}
+
+Matrix<double, 4, 1> quaternionCovFromEuler(const double roll_cov, const double pitch_cov,
+    const double yaw_cov,
+    const double qx, const double qy, const double qz, const double qw) {
+  // Euler covariance matrix
+  Matrix<double, 3, 3> euler_cov;
+  euler_cov(0) = roll_cov;
+  euler_cov(4) = pitch_cov;
+  euler_cov(8) = yaw_cov;
+
+  // Euler to Quaternion Jacobian
+  MatrixXd G(3, 4);
+
+  const double q3pq2 = qz + qy; // q3 + q2
+  const double q4pq1 = qw + qx; // q4 + q1
+
+  const double q3mq2 = qz - qy; // q3 - q2
+  const double q4mq1 = qw - qx; // q4 - q1
+
+  // first denominator
+  const double d1 = q3pq2*q3pq2 + q4pq1*q4pq1;
+  // second denominator
+  const double d2 = q3mq2*q3mq2 + q4mq1*q4mq1;
+  // third denominator
+  const double d3 = sqrt(1 - 4*(qy*qz + qx*qz)*(qy*qz + qx*qz));
+
+  G(0, 0) = -q3pq2 / d1 + q3mq2 / d2;
+  G(0, 1) =  q4pq1 / d1 - q4mq1 / d2;
+  G(0, 2) =  q4pq1 / d1 + q4mq1 / d2;
+  G(0, 3) = -q3pq2 / d1 - q3mq2 / d2;
+
+  G(1, 0) = 2 * qz / d3;
+  G(1, 1) = 2 * qz / d3;
+  G(1, 2) = 2 * qy / d3;
+  G(1, 3) = 2 * qx / d3;
+
+  G(2, 0) = G(0, 3);
+  G(2, 1) = G(0, 2);
+  G(2, 2) = G(0, 1);
+  G(2, 3) = G(0, 0);
+
+  // Quaternion covariance
+  MatrixXd Gi = pseudoInverse(G);
+  MatrixXd GT = G.transpose();
+  MatrixXd GTi = pseudoInverse(GT);
+  MatrixXd quat_cov = Gi * euler_cov * GTi;
+  return quat_cov.diagonal();
 }
 
 MatrixXd GraftUKFAbsolute::f(MatrixXd x, double dt){
@@ -305,6 +368,34 @@ VectorXd getMeasurements(const std::vector<boost::shared_ptr<GraftSensor> >& top
 				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.position.z);
 			}
 		}
+
+    // Orientation X, Y, Z and W
+    //  I'm going to treat these as inseperable due to the complexity of
+    //  calculating the quaternion covariance from the rpy covariance
+    if(meas->pose_covariance[21] > 1e-20 
+        || meas->pose_covariance[28] > 1e-20
+        || meas->pose_covariance[35] > 1e-20 ) {
+			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.x);
+			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.y);
+			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.z);
+			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.w);
+
+      MatrixXd quaternion_cov = quaternionCovFromEuler(meas->pose_covariance[21],
+          meas->pose_covariance[28], meas->pose_covariance[35], meas->pose.orientation.x,
+          meas->pose.orientation.y, meas->pose.orientation.z, meas->pose.orientation.w);
+			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(0));
+			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(1));
+			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(2));
+			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(3));
+
+			for(size_t j = 0; j < residuals_msgs.size(); j++){
+				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.x);
+				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.y);
+				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.z);
+				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.w);
+			}
+    }
+
 		// Linear Velocity X
 		if(meas->twist_covariance[0] > 1e-20){
 			actual_measurement = addElementToVector(actual_measurement, meas->twist.linear.x);
