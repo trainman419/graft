@@ -68,7 +68,7 @@ target_link_libraries(GraftUKFAttitude GraftOdometryTopic GraftImuTopic)
 
 add_library(GraftUKFAbsolute src/GraftUKFAbsolute.cpp)
 add_dependencies(GraftUKFAbsolute ${PROJECT_NAME}_gencpp)
-target_link_libraries(GraftUKFAbsolute GraftOdometryTopic GraftImuTopic)
+target_link_libraries(GraftUKFAbsolute GraftOdometryTopic GraftImuTopic ${rosconsole_LIBRARIES})
 
 ## Declare a cpp executable
 add_executable(graft_ukf_velocity src/graft_ukf_velocity.cpp)
@@ -79,6 +79,15 @@ target_link_libraries(graft_ukf_attitude GraftUKFAttitude GraftParameterManager 
 
 add_executable(graft_ukf_absolute src/graft_ukf_absolute.cpp)
 target_link_libraries(graft_ukf_absolute GraftUKFAbsolute GraftParameterManager GraftOdometryTopic GraftImuTopic ${catkin_LIBRARIES})
+
+###########
+## Tests ##
+###########
+
+if(CATKIN_ENABLE_TESTING)
+  catkin_add_gtest(quaternion_cov_test test/quaternion_cov.cpp)
+  target_link_libraries(quaternion_cov_test GraftUKFAbsolute)
+endif()
 
 #############
 ## Install ##

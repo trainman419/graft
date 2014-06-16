@@ -167,6 +167,72 @@ MatrixXd transformVelocitites(const MatrixXd vel, const MatrixXd quaternion){
 	return out;
 }
 
+Matrix<double, 4, 1> quaternionCovFromEuler(const double roll_cov, const double pitch_cov,
+    const double yaw_cov,
+    const double q1, const double q2, const double q3, const double q4) {
+  // Euler covariance matrix
+  Matrix<double, 3, 3> euler_cov;
+  euler_cov(0) = roll_cov;
+  euler_cov(4) = pitch_cov;
+  euler_cov(8) = yaw_cov;
+
+  double yaw = atan((q3+q2)/(q4+q1)) + atan((q3-q1)/(q4-q1));
+  double pitch = asin(2*(q2*q3 + q1*q4));
+  double roll = atan((q3+q2)/(q4+q1)) - atan((q3-q2)/(q4-q1));
+
+  double sss = sin(yaw/2)*sin(roll/2)*sin(pitch/2)/2;
+  double ssc = sin(yaw/2)*sin(roll/2)*cos(pitch/2)/2;
+  double scs = sin(yaw/2)*cos(roll/2)*sin(pitch/2)/2;
+  double scc = sin(yaw/2)*cos(roll/2)*cos(pitch/2)/2;
+
+  double ccc = cos(yaw/2)*cos(roll/2)*cos(pitch/2)/2;
+  double ccs = cos(yaw/2)*cos(roll/2)*sin(pitch/2)/2;
+  double csc = cos(yaw/2)*sin(roll/2)*cos(pitch/2)/2;
+  double css = cos(yaw/2)*sin(roll/2)*sin(pitch/2)/2;
+
+  // Euler to Quaternion Jacobian
+  MatrixXd G(4, 3);
+
+  G(0, 0) = -scs - csc; // q1/yaw
+  G(0, 1) =  ccc + sss; // q1/pitch
+  G(0, 2) = -css - scc; // q1/roll
+
+  G(1, 0) =  ccs - ssc; // q2/yaw
+  G(1, 1) =  ssc - css; // q2/pitch
+  G(1, 2) = -sss + ccc; // q2/roll
+
+  G(2, 0) =  ccc - sss; // q3/yaw
+  G(2, 1) = -scs + csc; // q3/pitch
+  G(2, 2) = -ssc + ccs; // q3/roll
+
+  G(3, 0) = -scc - css; // q4/yaw
+  G(3, 1) = -ccs - ssc; // q4/pitch
+  G(3, 2) = -csc - scs; // q4/roll
+
+  // Quaternion covariance
+  MatrixXd GT = G.transpose();
+  MatrixXd quat_cov = G * euler_cov * GT;
+
+  Matrix<double, 4, 1> result = quat_cov.diagonal();
+
+  // check that the result is reasonable
+  //  this mostly lets the compiler know that these values are used
+  //  (there's a variable-lifetime bug in the compiler in Ubuntu 13.04)
+  if( !std::isfinite(result(0)) ||
+        !std::isfinite(result(1)) ||
+        !std::isfinite(result(2)) ||
+        !std::isfinite(result(3)) ) {
+     ROS_ERROR("Quaternion covariance is not finite!");
+     ROS_ERROR_STREAM("Quaternion:\n" <<
+           q1 << "\n" << q2 << "\n" << q3 << "\n" << q4);
+     ROS_ERROR_STREAM("RPY covariance: " << roll_cov << ", " <<
+           pitch_cov << ", " << yaw_cov);
+     ROS_ERROR_STREAM("Quaternion covariance:\n" << result);
+  }
+
+  return result;
+}
+
 MatrixXd GraftUKFAbsolute::f(MatrixXd x, double dt){
 	Matrix<double, SIZE, 1> out;
 	out.setZero();
@@ -305,6 +371,66 @@ VectorXd getMeasurements(const std::vector<boost::shared_ptr<GraftSensor> >& top
 				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.position.z);
 			}
 		}
+
+		// Orientation X, Y, Z and W
+		//  I'm going to treat these as inseperable due to the complexity of
+		//  calculating the quaternion covariance from the rpy covariance
+		if(meas->pose_covariance[21] > 1e-20
+				|| meas->pose_covariance[28] > 1e-20
+				|| meas->pose_covariance[35] > 1e-20 ) {
+
+			MatrixXd quaternion_cov = quaternionCovFromEuler(
+					meas->pose_covariance[21], meas->pose_covariance[28],
+					meas->pose_covariance[35], meas->pose.orientation.x,
+					meas->pose.orientation.y, meas->pose.orientation.z,
+					meas->pose.orientation.w);
+
+			if( !std::isfinite(quaternion_cov(0)) ||
+					!std::isfinite(quaternion_cov(1)) ||
+					!std::isfinite(quaternion_cov(2)) ||
+					!std::isfinite(quaternion_cov(3)) ) {
+				ROS_ERROR("Quaternion covariance is not finite!");
+				ROS_ERROR_STREAM("Quaternion:\n" << meas->pose.orientation);
+				ROS_ERROR_STREAM("RPY covariance: " << meas->pose_covariance[21]
+						<< ", " << meas->pose_covariance[28]
+						<< ", " << meas->pose_covariance[35]);
+				ROS_ERROR_STREAM("Quaternion covariance:\n" << quaternion_cov);
+			} else {
+				actual_measurement = addElementToVector(actual_measurement,
+						meas->pose.orientation.x);
+				actual_measurement = addElementToVector(actual_measurement,
+						meas->pose.orientation.y);
+				actual_measurement = addElementToVector(actual_measurement,
+						meas->pose.orientation.z);
+				actual_measurement = addElementToVector(actual_measurement,
+						meas->pose.orientation.w);
+
+				innovation_covariance_diagonal = addElementToVector(
+						innovation_covariance_diagonal, quaternion_cov(0));
+				innovation_covariance_diagonal = addElementToVector(
+						innovation_covariance_diagonal, quaternion_cov(1));
+				innovation_covariance_diagonal = addElementToVector(
+						innovation_covariance_diagonal, quaternion_cov(2));
+				innovation_covariance_diagonal = addElementToVector(
+						innovation_covariance_diagonal, quaternion_cov(3));
+
+				for(size_t j = 0; j < residuals_msgs.size(); j++){
+					output_measurement_sigmas[j] = addElementToColumnMatrix(
+							output_measurement_sigmas[j],
+							residuals_msgs[j]->pose.orientation.x);
+					output_measurement_sigmas[j] = addElementToColumnMatrix(
+							output_measurement_sigmas[j],
+							residuals_msgs[j]->pose.orientation.y);
+					output_measurement_sigmas[j] = addElementToColumnMatrix(
+							output_measurement_sigmas[j],
+							residuals_msgs[j]->pose.orientation.z);
+					output_measurement_sigmas[j] = addElementToColumnMatrix(
+							output_measurement_sigmas[j],
+							residuals_msgs[j]->pose.orientation.w);
+				}
+			}
+		}
+
 		// Linear Velocity X
 		if(meas->twist_covariance[0] > 1e-20){
 			actual_measurement = addElementToVector(actual_measurement, meas->twist.linear.x);

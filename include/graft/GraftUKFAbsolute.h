@@ -48,6 +48,10 @@
 
 using namespace Eigen;
 
+Matrix<double, 4, 1> quaternionCovFromEuler(const double roll_cov, const double pitch_cov,
+    const double yaw_cov,
+    const double q1, const double q2, const double q3, const double q4);
+
 class GraftUKFAbsolute{
   public:
     GraftUKFAbsolute();
