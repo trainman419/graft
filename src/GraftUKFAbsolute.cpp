@@ -495,6 +495,19 @@ double GraftUKFAbsolute::predictAndUpdate(){
 
 	graft_covariance_ = predicted_covariance - K*predicted_measurement_uncertainty*K.transpose();
 
+  bool diverged = false;
+  for( int i=0; i<SIZE; i++ ) {
+    for( int j=0; j<SIZE; j++ ) {
+      if( !std::isfinite(graft_covariance_(i, j)) ) {
+        diverged = true;
+      }
+    }
+  }
+  if( diverged ) {
+    ROS_ERROR("Covariance diverged! This is probably bad");
+    // TODO: print messages
+  }
+
 	clearMessages(topics_);
 	return dt;
 }
