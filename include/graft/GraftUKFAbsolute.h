@@ -53,35 +53,35 @@ class GraftUKFAbsolute{
     GraftUKFAbsolute();
     ~GraftUKFAbsolute();
 
-	MatrixXd f(MatrixXd x, double dt);
+    graft::GraftStatePtr getMessageFromState();
 
-	std::vector<MatrixXd > predict_sigma_points(std::vector<MatrixXd >& sigma_points, double dt);
+    double predictAndUpdate();
 
-	graft::GraftStatePtr getMessageFromState();
+    void setTopics(std::vector<boost::shared_ptr<GraftSensor> >& topics);
 
-	graft::GraftStatePtr getMessageFromState(Matrix<double, SIZE, 1>& state, Matrix<double, SIZE, SIZE>& covariance);
+    void setInitialCovariance(std::vector<double>& P);
 
-	double predictAndUpdate();
+    void setProcessNoise(std::vector<double>& Q);
 
-	void setTopics(std::vector<boost::shared_ptr<GraftSensor> >& topics);
+    void setAlpha(const double alpha);
 
-	void setInitialCovariance(std::vector<double>& P);
+    void setKappa(const double kappa);
 
-	void setProcessNoise(std::vector<double>& Q);
-
-	void setAlpha(const double alpha);
-
-	void setKappa(const double kappa);
-
-	void setBeta(const double beta);
+    void setBeta(const double beta);
     
   private:
+    MatrixXd f(MatrixXd x, double dt);
+
+    std::vector<MatrixXd > predict_sigma_points(std::vector<MatrixXd >& sigma_points, double dt);
+
+    graft::GraftStatePtr getMessageFromState(Matrix<double, SIZE, 1>& state, Matrix<double, SIZE, SIZE>& covariance);
+
 
     Matrix<double, SIZE, 1> graft_state_;
-	Matrix<double, SIZE, 1> graft_control_;
-	Matrix<double, SIZE, SIZE> graft_covariance_;
+    Matrix<double, SIZE, 1> graft_control_;
+    Matrix<double, SIZE, SIZE> graft_covariance_;
 
-	Matrix<double, SIZE, SIZE> Q_;
+    Matrix<double, SIZE, SIZE> Q_;
 
     ros::Time last_update_time_;
     ros::Time last_imu_time_;
@@ -91,6 +91,8 @@ class GraftUKFAbsolute{
     double kappa_;
 
     std::vector<boost::shared_ptr<GraftSensor> > topics_;
+
+    bool diverged_;
 };
 
 #endif

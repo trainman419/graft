@@ -33,16 +33,17 @@
 
 #include <Eigen/SVD>
 
- #include <graft/GraftUKFAbsolute.h>
- #include <ros/console.h>
+#include <graft/GraftUKFAbsolute.h>
+#include <ros/console.h>
 
- GraftUKFAbsolute::GraftUKFAbsolute(){
+GraftUKFAbsolute::GraftUKFAbsolute() : diverged_(false)
+{
 	graft_state_.setZero();
 	graft_state_(3) = 1.0; // Normalize quaternion
 	graft_control_.setZero();
 	graft_covariance_.setIdentity();
 	Q_.setZero();
- }
+}
 
 GraftUKFAbsolute::~GraftUKFAbsolute(){
 
@@ -462,6 +463,9 @@ double GraftUKFAbsolute::predictAndUpdate(){
 	if(topics_.size() == 0 || topics_[0] == NULL){
 		return 0;
 	}
+  if( diverged_ ) {
+    return 0;
+  }
 	ros::Time t = ros::Time::now();
 	double dt = (t - last_update_time_).toSec();
 	if(last_update_time_.toSec() < 0.0001){ // No previous updates
@@ -495,17 +499,30 @@ double GraftUKFAbsolute::predictAndUpdate(){
 
 	graft_covariance_ = predicted_covariance - K*predicted_measurement_uncertainty*K.transpose();
 
-  bool diverged = false;
   for( int i=0; i<SIZE; i++ ) {
     for( int j=0; j<SIZE; j++ ) {
       if( !std::isfinite(graft_covariance_(i, j)) ) {
-        diverged = true;
+        diverged_ = true;
       }
     }
   }
-  if( diverged ) {
-    ROS_ERROR("Covariance diverged! This is probably bad");
-    // TODO: print messages
+  if( diverged_ ) {
+    // print offending messages
+    std::stringstream errmsg;
+    errmsg << "Covariance diverged! Offending topics are: ";
+    
+	  // For each topic
+	  for(size_t i = 0; i < topics_.size(); i++){
+		  // Get the measurement msg and covariance
+		  graft::GraftSensorResidual::ConstPtr meas = topics_[i]->z();
+      if( meas ) {
+        if( i>0 ) errmsg << ", ";
+        errmsg << topics_[i]->getName() << "(";
+        errmsg << *meas << ")";
+      }
+    }
+
+    ROS_ERROR_STREAM(errmsg.str());
   }
 
 	clearMessages(topics_);
