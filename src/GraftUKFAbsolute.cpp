@@ -34,6 +34,8 @@
  #include <graft/GraftUKFAbsolute.h>
  #include <ros/console.h>
 
+ const double GraftUKFAbsolute::expected_interval_ = 0.1;
+
  GraftUKFAbsolute::GraftUKFAbsolute(){
 	graft_state_.setZero();
 	graft_state_(3) = 1.0; // Normalize quaternion
@@ -377,6 +379,9 @@ double GraftUKFAbsolute::predictAndUpdate(){
 		ROS_WARN("Negative dt - odom");
 		last_update_time_ = t;
 		return 0.0;
+	}
+	if( dt > expected_interval_ * 2 ) {
+		dt = expected_interval_ * 2.0;
 	}
 	last_update_time_ = t;
 

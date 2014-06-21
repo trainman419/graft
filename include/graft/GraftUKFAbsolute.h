@@ -91,6 +91,8 @@ class GraftUKFAbsolute{
     double kappa_;
 
     std::vector<boost::shared_ptr<GraftSensor> > topics_;
+
+    static const double expected_interval_;
 };
 
 #endif
