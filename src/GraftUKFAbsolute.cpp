@@ -36,6 +36,8 @@
 #include <graft/GraftUKFAbsolute.h>
 #include <ros/console.h>
 
+const double GraftUKFAbsolute::expected_interval_ = 0.1;
+
 GraftUKFAbsolute::GraftUKFAbsolute() : diverged_(false)
 {
 	graft_state_.setZero();
@@ -473,6 +475,9 @@ double GraftUKFAbsolute::predictAndUpdate(){
 		last_update_time_ = t;
 		return 0.0;
 	}
+   if( dt > expected_interval_ * 2 ) {
+      dt = expected_interval_ * 2.0;
+   }
 	last_update_time_ = t;
 
 	// Prediction

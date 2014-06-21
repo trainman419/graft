@@ -93,6 +93,8 @@ class GraftUKFAbsolute{
     std::vector<boost::shared_ptr<GraftSensor> > topics_;
 
     bool diverged_;
+
+    static const double expected_interval_;
 };
 
 #endif
