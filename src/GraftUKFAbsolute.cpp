@@ -63,6 +63,14 @@ MatrixXd matrixSqrt(MatrixXd matrix){ ///< @TODO Make a reference?  MatrixXd vs 
 	return Eigen::LLT<Eigen::MatrixXd>(matrix).matrixL();
 }
 
+Matrix<double, 4, 1> unitQuaternion(const Matrix<double, 4, 1>& q){
+	double q_mag = std::sqrt(q(0)*q(0) + q(1)*q(1) + q(2)*q(2) + q(3)*q(3));
+  if( q_mag < 0.1 ) {
+    ROS_WARN("SMALL QUATERNION. HARD TO NORMALIZE");
+  }
+	return q / q_mag;
+}
+
 std::vector<MatrixXd > generateSigmaPoints(MatrixXd state, MatrixXd covariance, double lambda){
 	std::vector<MatrixXd > out;
 
@@ -74,12 +82,15 @@ std::vector<MatrixXd > generateSigmaPoints(MatrixXd state, MatrixXd covariance, 
 
 	// i = 1,...,n
 	for(size_t i = 1; i <= state.rows(); i++){
-		out.push_back(state + sig_sqrt.col(i-1));
+    MatrixXd tmp_state = state + sig_sqrt.col(i-1);
+	  //tmp_state.block(3, 0, 4, 1) = unitQuaternion(tmp_state.block(3, 0, 4, 1));
+		out.push_back(tmp_state);
 	}
 
 	// i = n + 1,...,2n
 	for(size_t i = state.rows() + 1; i <= 2*state.rows(); i++){
-		out.push_back(state - sig_sqrt.col(i-(state.rows()+1)));
+    MatrixXd tmp_state = state - sig_sqrt.col(i-(state.rows()+1));
+		out.push_back(tmp_state);
 	}
 	return out;
 }
@@ -125,11 +136,6 @@ Matrix<double, 4, 4> quaternionUpdateMatrix(const double wx, const double wy, co
    return out;
 }
 
-Matrix<double, 4, 1> unitQuaternion(const Matrix<double, 4, 1>& q){
-	double q_mag = std::sqrt(q(0)*q(0) + q(1)*q(1) + q(2)*q(2) + q(3)*q(3));
-	return q / q_mag;
-}
-
 Matrix<double, 4, 1> updatedQuaternion(const Matrix<double, 4, 1>& q, const double wx, const double wy, const double wz, double dt){
 	Matrix<double, 4, 1> out;
 	Matrix<double, 4, 4> I = Matrix<double, 4, 4>::Identity();
@@ -154,11 +160,16 @@ Matrix<double, 4, 1> updatedQuaternion(const Matrix<double, 4, 1>& q, const doub
 
 MatrixXd transformVelocitites(const MatrixXd vel, const MatrixXd quaternion){
 	Matrix<double, 3, 1> out;
+  MatrixXd unit_q = unitQuaternion(quaternion);
 	geometry_msgs::Quaternion gquat;
-	gquat.w = quaternion(0);
-	gquat.x = quaternion(1);
-	gquat.y = quaternion(2);
-	gquat.z = quaternion(3);
+	//gquat.w = quaternion(0);
+	//gquat.x = quaternion(1);
+	//gquat.y = quaternion(2);
+	//gquat.z = quaternion(3);
+	gquat.w = unit_q(0);
+	gquat.x = unit_q(1);
+	gquat.y = unit_q(2);
+	gquat.z = unit_q(3);
 	tf::Quaternion tfq;
 	tf::quaternionMsgToTF(gquat, tfq);
 	tf::Transform tft(tfq, tf::Vector3(0, 0, 0));
@@ -253,13 +264,14 @@ MatrixXd GraftUKFAbsolute::f(MatrixXd x, double dt){
 
 graft::GraftState::ConstPtr stateMsgFromMatrix(const MatrixXd& state){
 	graft::GraftState::Ptr out(new graft::GraftState());
+	MatrixXd q = unitQuaternion(state.block(3, 0, 4, 1));
 	out->pose.position.x = state(0);
 	out->pose.position.y = state(1);
 	out->pose.position.z = state(2);
-	out->pose.orientation.w = state(3);
-	out->pose.orientation.x = state(4);
-	out->pose.orientation.y = state(5);
-	out->pose.orientation.z = state(6);
+	out->pose.orientation.w = q(0);
+	out->pose.orientation.x = q(1);
+	out->pose.orientation.y = q(2);
+	out->pose.orientation.z = q(3);
 	out->twist.linear.x = state(7);
 	out->twist.linear.y = state(8);
 	out->twist.linear.z = state(9);

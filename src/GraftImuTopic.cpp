@@ -105,6 +105,8 @@ graft::GraftSensorResidual::Ptr GraftImuTopic::h(const graft::GraftState& state)
 	out->name = name_;
 	out->pose = state.pose;
 	out->twist = state.twist;
+  //ROS_ERROR_STREAM("accelFromQuaternion " << name_ << ", " <<
+  //    state.pose.orientation);
 	out->accel = accelFromQuaternion(state.pose.orientation, 9.81);
   return out;
 }
