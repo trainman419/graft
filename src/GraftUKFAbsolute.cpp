@@ -384,32 +384,45 @@ VectorXd getMeasurements(const std::vector<boost::shared_ptr<GraftSensor> >& top
 			}
 		}
 
-    // Orientation X, Y, Z and W
-    //  I'm going to treat these as inseperable due to the complexity of
-    //  calculating the quaternion covariance from the rpy covariance
-    if(meas->pose_covariance[21] > 1e-20 
-        || meas->pose_covariance[28] > 1e-20
-        || meas->pose_covariance[35] > 1e-20 ) {
-			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.x);
-			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.y);
-			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.z);
-			actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.w);
+		// Orientation X, Y, Z and W
+		//  I'm going to treat these as inseperable due to the complexity of
+		//  calculating the quaternion covariance from the rpy covariance
+		if(meas->pose_covariance[21] > 1e-20 
+				|| meas->pose_covariance[28] > 1e-20
+				|| meas->pose_covariance[35] > 1e-20 ) {
 
-      MatrixXd quaternion_cov = quaternionCovFromEuler(meas->pose_covariance[21],
-          meas->pose_covariance[28], meas->pose_covariance[35], meas->pose.orientation.x,
-          meas->pose.orientation.y, meas->pose.orientation.z, meas->pose.orientation.w);
-			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(0));
-			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(1));
-			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(2));
-			innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(3));
+			MatrixXd quaternion_cov = quaternionCovFromEuler(meas->pose_covariance[21],
+					meas->pose_covariance[28], meas->pose_covariance[35], meas->pose.orientation.x,
+					meas->pose.orientation.y, meas->pose.orientation.z, meas->pose.orientation.w);
+			if( !std::isfinite(quaternion_cov(0)) ||
+					!std::isfinite(quaternion_cov(1)) ||
+					!std::isfinite(quaternion_cov(2)) ||
+					!std::isfinite(quaternion_cov(3)) ) {
+				ROS_ERROR("Quaternion covariance is not finite!");
+				ROS_ERROR_STREAM("Quaternion:\n" << meas->pose.orientation);
+				ROS_ERROR_STREAM("RPY covariance: " << meas->pose_covariance[21] << ", " <<
+						meas->pose_covariance[28] << ", " << meas->pose_covariance[35]);
+				ROS_ERROR_STREAM("Quaternion covariance:\n" << quaternion_cov);
+			} else {
 
-			for(size_t j = 0; j < residuals_msgs.size(); j++){
-				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.x);
-				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.y);
-				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.z);
-				output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.w);
+				actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.x);
+				actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.y);
+				actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.z);
+				actual_measurement = addElementToVector(actual_measurement, meas->pose.orientation.w);
+
+				innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(0));
+				innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(1));
+				innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(2));
+				innovation_covariance_diagonal = addElementToVector(innovation_covariance_diagonal, quaternion_cov(3));
+
+				for(size_t j = 0; j < residuals_msgs.size(); j++){
+					output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.x);
+					output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.y);
+					output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.z);
+					output_measurement_sigmas[j] = addElementToColumnMatrix(output_measurement_sigmas[j], residuals_msgs[j]->pose.orientation.w);
+				}
 			}
-    }
+		}
 
 		// Linear Velocity X
 		if(meas->twist_covariance[0] > 1e-20){
