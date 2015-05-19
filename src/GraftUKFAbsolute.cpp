@@ -183,64 +183,51 @@ MatrixXd transformVelocitites(const MatrixXd vel, const MatrixXd quaternion){
 	return out;
 }
 
-template<typename _Matrix_Type_>
-_Matrix_Type_ pseudoInverse(const _Matrix_Type_ &a,
-    double epsilon = std::numeric_limits<double>::epsilon())
-{
-  Eigen::JacobiSVD< _Matrix_Type_ > svd(a ,Eigen::ComputeThinU |
-      Eigen::ComputeThinV);
-  double tolerance = epsilon * std::max(a.cols(), a.rows())
-    *svd.singularValues().array().abs()(0);
-  return svd.matrixV() *  (svd.singularValues().array().abs() >
-      tolerance).select(svd.singularValues().array().inverse(),
-        0).matrix().asDiagonal() * svd.matrixU().adjoint();
-}
-
 Matrix<double, 4, 1> quaternionCovFromEuler(const double roll_cov, const double pitch_cov,
     const double yaw_cov,
-    const double qx, const double qy, const double qz, const double qw) {
+    const double q1, const double q2, const double q3, const double q4) {
   // Euler covariance matrix
   Matrix<double, 3, 3> euler_cov;
   euler_cov(0) = roll_cov;
   euler_cov(4) = pitch_cov;
   euler_cov(8) = yaw_cov;
 
+  double yaw = atan((q3+q2)/(q4+q1)) + atan((q3-q1)/(q4-q1));
+  double pitch = asin(2*(q2*q3 + q1*q4));
+  double roll = atan((q3+q2)/(q4+q1)) - atan((q3-q2)/(q4-q1));
+
+  double sss = sin(yaw/2)*sin(roll/2)*sin(pitch/2)/2;
+  double ssc = sin(yaw/2)*sin(roll/2)*cos(pitch/2)/2;
+  double scs = sin(yaw/2)*cos(roll/2)*sin(pitch/2)/2;
+  double scc = sin(yaw/2)*cos(roll/2)*cos(pitch/2)/2;
+
+  double ccc = cos(yaw/2)*cos(roll/2)*cos(pitch/2)/2;
+  double ccs = cos(yaw/2)*cos(roll/2)*sin(pitch/2)/2;
+  double csc = cos(yaw/2)*sin(roll/2)*cos(pitch/2)/2;
+  double css = cos(yaw/2)*sin(roll/2)*sin(pitch/2)/2;
+
   // Euler to Quaternion Jacobian
-  MatrixXd G(3, 4);
+  MatrixXd G(4, 3);
 
-  const double q3pq2 = qz + qy; // q3 + q2
-  const double q4pq1 = qw + qx; // q4 + q1
+  G(0, 0) = -scs - csc; // q1/yaw
+  G(0, 1) =  ccc + sss; // q1/pitch
+  G(0, 2) = -css - scc; // q1/roll
 
-  const double q3mq2 = qz - qy; // q3 - q2
-  const double q4mq1 = qw - qx; // q4 - q1
+  G(1, 0) =  ccs - ssc; // q2/yaw
+  G(1, 1) =  ssc - css; // q2/pitch
+  G(1, 2) = -sss + ccc; // q2/roll
 
-  // first denominator
-  const double d1 = q3pq2*q3pq2 + q4pq1*q4pq1;
-  // second denominator
-  const double d2 = q3mq2*q3mq2 + q4mq1*q4mq1;
-  // third denominator
-  const double d3 = sqrt(1 - 4*(qy*qz + qx*qz)*(qy*qz + qx*qz));
+  G(2, 0) =  ccc - sss; // q3/yaw
+  G(2, 1) = -scs + csc; // q3/pitch
+  G(2, 2) = -ssc + ccs; // q3/roll
 
-  G(0, 0) = -q3pq2 / d1 + q3mq2 / d2;
-  G(0, 1) =  q4pq1 / d1 - q4mq1 / d2;
-  G(0, 2) =  q4pq1 / d1 + q4mq1 / d2;
-  G(0, 3) = -q3pq2 / d1 - q3mq2 / d2;
-
-  G(1, 0) = 2 * qz / d3;
-  G(1, 1) = 2 * qz / d3;
-  G(1, 2) = 2 * qy / d3;
-  G(1, 3) = 2 * qx / d3;
-
-  G(2, 0) = G(0, 3);
-  G(2, 1) = G(0, 2);
-  G(2, 2) = G(0, 1);
-  G(2, 3) = G(0, 0);
+  G(3, 0) = -scc - css; // q4/yaw
+  G(3, 1) = -ccs - ssc; // q4/pitch
+  G(3, 2) = -csc - scs; // q4/roll
 
   // Quaternion covariance
-  MatrixXd Gi = pseudoInverse(G);
   MatrixXd GT = G.transpose();
-  MatrixXd GTi = pseudoInverse(GT);
-  MatrixXd quat_cov = Gi * euler_cov * GTi;
+  MatrixXd quat_cov = G * euler_cov * GT;
   return quat_cov.diagonal();
 }
 
