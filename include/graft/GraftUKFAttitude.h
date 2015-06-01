@@ -91,6 +91,8 @@ class GraftUKFAttitude{
     double kappa_;
 
     std::vector<boost::shared_ptr<GraftSensor> > topics_;
+
+    bool diverged_;
 };
 
 #endif
