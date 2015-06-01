@@ -430,7 +430,7 @@ double GraftUKFAbsolute::predictAndUpdate(){
 			}
 		}
 
-		ROS_ERROR_STREAM(errmsg.str());
+		ROS_ERROR_STREAM_THROTTLE(5.0, errmsg.str());
 	}
 
 	clearMessages(topics_);
