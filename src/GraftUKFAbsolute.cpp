@@ -381,6 +381,7 @@ double GraftUKFAbsolute::predictAndUpdate(){
 		return 0.0;
 	}
 	if( dt > expected_interval_ * 2 ) {
+		ROS_WARN("Expected interval of %f; got %f.", expected_interval_, dt);
 		dt = expected_interval_ * 2.0;
 	}
 	last_update_time_ = t;
